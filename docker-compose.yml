@@ -1,0 +1,55 @@
+# Docker Compose run path.
+#
+# There is deliberately no Dockerfile: the core stratification is base R only,
+# so a stock pinned image runs it with nothing to build. Only the optional
+# mapping needs sf/raster, and rocker/geospatial already ships them.
+#
+# Mounts
+#   /app   this project, read-only
+#   /data  the surrounding malaria project (so Data/ is reachable), read-only
+#   /out   where results are written  -> ./out on the host
+#
+# Usage
+#   docker compose run --rm stratify --help
+#   docker compose run --rm test
+#   docker compose run --rm stratify \
+#       --input /data/Data/Mappable/County_2026_mappable.csv \
+#       --id ADM1_EN --vars "Incidence of Outpatient Malaria (per 1000 population),Malaria Test Positivity Rate - Overall,Confirmed Malaria cases Per 1000 Population" \
+#       --output /out/strata_2026.csv
+#   docker compose run --rm map \
+#       --input /data/Data/Mappable/County_2026_mappable.csv \
+#       --id ADM1_EN --vars "...same..." \
+#       --output /out/strata_2026.csv \
+#       --shapefile /data/Data/Admin_1/County_boundaries.shp \
+#       --map /out/map_2026.png
+
+services:
+  # Core stratification: CSV in, CSV out. Base R 4.3.2, the same version
+  # jamovi 2.5.3.0 bundles, so results match the module exactly.
+  stratify:
+    image: r-base:4.3.2
+    working_dir: /out
+    entrypoint: ["Rscript", "/app/bin/stratify.R"]
+    volumes:
+      - .:/app:ro
+      - ..:/data:ro
+      - ./out:/out
+
+  # Adds the choropleth. rocker/geospatial already contains sf, raster, terra
+  # and the GDAL/GEOS/PROJ stack, so there is still nothing to build.
+  map:
+    image: rocker/geospatial:4.3.2
+    working_dir: /out
+    entrypoint: ["Rscript", "/app/bin/stratify.R"]
+    volumes:
+      - .:/app:ro
+      - ..:/data:ro
+      - ./out:/out
+
+  # The test suite, including the golden comparison against jamovi's output.
+  test:
+    image: r-base:4.3.2
+    working_dir: /app
+    entrypoint: ["Rscript", "/app/tests/run_tests.R"]
+    volumes:
+      - .:/app:ro
